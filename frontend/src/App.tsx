@@ -220,7 +220,7 @@ export default function App() {
             <div className="relative group">
               <div className="w-24 h-24 rounded-full border-2 border-green-500 p-1 bg-black overflow-hidden relative glow-green transition-transform group-hover:scale-105 duration-300">
                 <img 
-                  src={profilePhoto} 
+                  src={`/api/proxy-image?url=${encodeURIComponent(profilePhoto)}`} 
                   alt="API Profile Photo" 
                   className="w-full h-full object-cover rounded-full filter grayscale contrast-125"
                   referrerPolicy="no-referrer"
