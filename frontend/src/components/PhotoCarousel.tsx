@@ -177,70 +177,7 @@ export default function PhotoCarousel({
         </div>
       </div>
 
-      {/* Image Add/Inject Panel (Simulation assistance) */}
-      <div className="border border-green-500/20 rounded p-4 bg-zinc-950/80">
-        <h3 className="text-xs font-bold text-green-400 mb-3 tracking-widest flex items-center justify-between">
-          <span>[+] INJECT PHOTO DATA TO RECON CAROUSEL</span>
-          <span className="text-[10px] text-green-500/50 font-normal">Simulate API Response payload</span>
-        </h3>
-        
-        <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="md:col-span-2">
-            <label className="block text-[10px] text-green-500/70 mb-1">IMAGE URL</label>
-            <input
-              type="url"
-              placeholder="https://images.unsplash.com/... or your custom API image URL"
-              value={newUrl}
-              onChange={(e) => setNewUrl(e.target.value)}
-              className="w-full bg-black border border-green-500/30 text-green-400 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-400/50 font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] text-green-500/70 mb-1">CAPTION / TAG</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Insta post #tag"
-                value={newCaption}
-                onChange={(e) => setNewCaption(e.target.value)}
-                className="w-full bg-black border border-green-500/30 text-green-400 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-400/50 font-mono"
-              />
-              <button
-                type="submit"
-                className="bg-green-950/40 hover:bg-green-900/60 border border-green-500 text-green-400 rounded px-3 py-1.5 text-xs font-bold flex items-center justify-center gap-1 transition-all"
-              >
-                <Plus size={14} />
-                INJECT
-              </button>
-            </div>
-          </div>
-        </form>
 
-        {/* Current list of active images (with delete capability) */}
-        {images.length > 0 && (
-          <div className="mt-4 border-t border-green-500/10 pt-3">
-            <span className="text-[10px] text-green-500/60 block mb-2">ACTIVE IMAGE NODES IN BUFFER ({images.length}):</span>
-            <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto pr-1">
-              {images.map((img) => (
-                <div
-                  key={img.id}
-                  className="flex items-center gap-2 bg-zinc-900 border border-green-500/10 rounded px-2 py-1 text-[10px]"
-                >
-                  <img src={img.url} alt="" className="w-4 h-4 object-cover rounded" referrerPolicy="no-referrer" />
-                  <span className="text-green-400 max-w-[80px] truncate">{img.caption}</span>
-                  <button
-                    onClick={() => onRemoveImage(img.id)}
-                    className="text-red-500 hover:text-red-400 p-0.5 transition-colors"
-                    title="Remove Image"
-                  >
-                    <Trash2 size={10} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Fullscreen Recon Modal */}
       {selectedImage && (
