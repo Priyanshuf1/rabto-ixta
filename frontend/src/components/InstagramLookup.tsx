@@ -58,22 +58,15 @@ export default function InstagramLookup({ onResolveId, onLoadTarget, onAddLog }:
     const key = keyInputVal.trim();
     if (!key || key.length < 10) return;
     
-    // Contribute key to server pool too
-    try {
-      await fetch('/api/contribute-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key })
-      });
-    } catch (_) {}
-
+    // Privacy Enforcement: Key is only saved in local browser storage.
+    // It is never pooled, logged, or stored on the server.
     localStorage.setItem(LS_KEY, key);
     setApiKey(key);
     setKeySaved(true);
     setShowKeyInput(false);
     setIsDailyLimitHit(false);
     setKeyInputVal('');
-    onAddLog?.('✅ API key saved and contributed to pool. Unlimited access unlocked!', 'success');
+    onAddLog?.('✅ API key saved securely in your browser.', 'success');
     setTimeout(() => setKeySaved(false), 3000);
   };
 
@@ -98,10 +91,10 @@ export default function InstagramLookup({ onResolveId, onLoadTarget, onAddLog }:
     onAddLog?.(`Initializing ID extraction protocol for target: @${targetUser}`, 'system');
 
     const steps = [
-      { text: 'Spinning up residential proxy networks...', duration: 250, progress: 20 },
-      { text: 'Injecting GraphQL edge query headers...', duration: 300, progress: 50 },
-      { text: 'Bypassing rate limits via key rotation...', duration: 400, progress: 80 },
-      { text: 'Querying RapidAPI pool...', duration: 200, progress: 90 },
+      { text: 'Preparing connection...', duration: 250, progress: 20 },
+      { text: 'Connecting to API...', duration: 300, progress: 50 },
+      { text: 'Retrieving user payload...', duration: 400, progress: 80 },
+      { text: 'Finalizing extraction...', duration: 200, progress: 90 },
     ];
 
     for (const step of steps) {

@@ -246,6 +246,7 @@ export default function App() {
                 </span>
               </div>
 
+              
               {/* Stats returned by your future API */}
               <div className="flex flex-wrap justify-center md:justify-start gap-4 text-[11px] text-green-500/80 pt-1">
                 <div>
@@ -257,10 +258,6 @@ export default function App() {
                 <div>
                   <span className="text-green-500/40">POST NODES:</span> <span className="text-green-400 font-bold">{target.postsCount}</span>
                 </div>
-              </div>
-              
-              <div className="text-[9px] text-green-500/40 mt-1 max-w-sm">
-                *Disclaimer: The followers count shown is 95% accurate. The remaining 5% may represent mutual connections not yet fully synced by the API.
               </div>
             </div>
           </div>

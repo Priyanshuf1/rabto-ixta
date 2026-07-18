@@ -11,8 +11,24 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
 
+import net from 'net';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.PORT || 3002;
+let PORT = parseInt(process.env.PORT) || 3002;
+
+// ─── Find Available Port ──────────────────────────────────────────────────────
+async function getAvailablePort(startPort) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.listen(startPort, () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+    server.on('error', () => {
+      resolve(getAvailablePort(startPort + 1));
+    });
+  });
+}
 
 // ─── Banner ───────────────────────────────────────────────────────────────────
 console.log('\x1b[32m'); // Green
@@ -68,7 +84,7 @@ if (!fs.existsSync(indexHtml)) {
 }
 
 // ─── Find tsx executable ──────────────────────────────────────────────────────
-function findTsx(): string {
+function findTsx() {
   // Try local backend node_modules first
   const localTsx = path.join(__dirname, 'backend', 'node_modules', '.bin', 'tsx');
   const localTsxCmd = process.platform === 'win32' ? localTsx + '.cmd' : localTsx;
@@ -85,54 +101,60 @@ function findTsx(): string {
   return 'npx tsx';
 }
 
-// ─── Start the backend server ─────────────────────────────────────────────────
-const serverFile = path.join(__dirname, 'backend', 'src', 'server.ts');
-const tsx = findTsx();
+async function start() {
+  PORT = await getAvailablePort(PORT);
 
-console.log(`\x1b[33m🚀 Starting rabto-ixta on http://localhost:${PORT}...\x1b[0m`);
+  // ─── Start the backend server ─────────────────────────────────────────────────
+  const serverFile = path.join(__dirname, 'backend', 'src', 'server.ts');
+  const tsx = findTsx();
 
-const [cmd, ...args] = tsx.split(' ');
-const serverProcess = spawn(cmd, [...args, serverFile], {
-  cwd: path.join(__dirname, 'backend'),
-  stdio: 'inherit',
-  env: { ...process.env, PORT: String(PORT) },
-  shell: process.platform === 'win32'
-});
+  console.log(`\x1b[33m🚀 Starting rabto-ixta on http://localhost:${PORT}...\x1b[0m`);
 
-serverProcess.on('error', (err) => {
-  console.error('\x1b[31m❌ Failed to start server:', err.message, '\x1b[0m');
-  console.error('   Try running manually: cd backend && npx tsx src/server.ts');
-  process.exit(1);
-});
+  const [cmd, ...args] = tsx.split(' ');
+  const serverProcess = spawn(cmd, [...args, serverFile], {
+    cwd: path.join(__dirname, 'backend'),
+    stdio: 'inherit',
+    env: { ...process.env, PORT: String(PORT) },
+    shell: process.platform === 'win32'
+  });
 
-serverProcess.on('exit', (code) => {
-  if (code !== 0 && code !== null) {
-    console.error(`\x1b[31m❌ Server exited with code ${code}\x1b[0m`);
-  }
-});
+  serverProcess.on('error', (err) => {
+    console.error('\x1b[31m❌ Failed to start server:', err.message, '\x1b[0m');
+    console.error('   Try running manually: cd backend && npx tsx src/server.ts');
+    process.exit(1);
+  });
 
-// ─── Open browser ─────────────────────────────────────────────────────────────
-setTimeout(() => {
-  const url = `http://localhost:${PORT}`;
-  console.log(`\n\x1b[32m✅ rabto-ixta is live! → ${url}\x1b[0m`);
-  console.log('\x1b[90m   Press Ctrl+C to stop\x1b[0m\n');
-
-  try {
-    if (process.platform === 'win32') {
-      execSync(`start "" "${url}"`, { shell: true });
-    } else if (process.platform === 'darwin') {
-      execSync(`open "${url}"`);
-    } else {
-      execSync(`xdg-open "${url}"`);
+  serverProcess.on('exit', (code) => {
+    if (code !== 0 && code !== null) {
+      console.error(`\x1b[31m❌ Server exited with code ${code}\x1b[0m`);
     }
-  } catch (_) {
-    // Browser open failed — user can manually open the URL
-  }
-}, 2000);
+  });
 
-// ─── Handle exit ──────────────────────────────────────────────────────────────
-process.on('SIGINT', () => {
-  console.log('\n\x1b[33m👋 Shutting down rabto-ixta...\x1b[0m');
-  serverProcess.kill('SIGTERM');
-  process.exit(0);
-});
+  // ─── Open browser ─────────────────────────────────────────────────────────────
+  setTimeout(() => {
+    const url = `http://localhost:${PORT}`;
+    console.log(`\n\x1b[32m✅ rabto-ixta is live! → ${url}\x1b[0m`);
+    console.log('\x1b[90m   Press Ctrl+C to stop\x1b[0m\n');
+
+    try {
+      if (process.platform === 'win32') {
+        execSync(`start "" "${url}"`, { shell: true });
+      } else if (process.platform === 'darwin') {
+        execSync(`open "${url}"`);
+      } else {
+        execSync(`xdg-open "${url}"`);
+      }
+    } catch (_) {
+      // Browser open failed — user can manually open the URL
+    }
+  }, 2000);
+
+  // ─── Handle exit ──────────────────────────────────────────────────────────────
+  process.on('SIGINT', () => {
+    console.log('\n\x1b[33m👋 Shutting down rabto-ixta...\x1b[0m');
+    serverProcess.kill('SIGTERM');
+    process.exit(0);
+  });
+}
+
+start().catch(console.error);
