@@ -1,0 +1,12 @@
+# Do not publish source or development files in the npm package
+frontend/src/
+frontend/public/
+frontend/node_modules/
+backend/node_modules/
+tests/
+scripts/
+.github/
+.env*
+*.log
+hash-report*.txt
+working-before-shareable-launch*.txt
