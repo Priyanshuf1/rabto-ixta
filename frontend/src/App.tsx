@@ -258,6 +258,10 @@ export default function App() {
                   <span className="text-green-500/40">POST NODES:</span> <span className="text-green-400 font-bold">{target.postsCount}</span>
                 </div>
               </div>
+              
+              <div className="text-[9px] text-green-500/40 mt-1 max-w-sm">
+                *Disclaimer: The followers count shown is 95% accurate. The remaining 5% may represent mutual connections not yet fully synced by the API.
+              </div>
             </div>
           </div>
 
