@@ -139,7 +139,9 @@ node cli.js --version
 - Search for: FlashAPI1
 - Open the FlashAPI1 Instagram API result.
 - Check that the API host is compatible with: flashapi1.p.rapidapi.com
-- Where the listing is still active, mention: https://rapidapi.com/for-sharm/api/flashapi1
+- Direct FlashAPI1 listing, when available:
+
+https://rapidapi.com/for-sharm/api/flashapi1
 - RapidAPI can change page layouts, provider names and listing details.
 
 ### Step 3: Open the Pricing section
@@ -363,4 +365,4 @@ https://github.com/Priyanshuf1
 
 ## License
 
-LICENSE file is missing in the repository.
+This project is licensed under the MIT License. See the `LICENSE` file for details.
