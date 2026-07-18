@@ -50,20 +50,6 @@ async function getKeyList(userKey?: string): Promise<string[]> {
   
   return [...new Set(list)]; // Remove duplicates
 }
-  
-  // User provided key ALWAYS goes first (highest priority)
-  if (userKey && userKey.length > 10) {
-    list.push(userKey);
-  }
-  
-  // Then contributed keys
-  list.push(...userContributedKeys.filter(k => k !== userKey));
-  
-  // Finally server keys as fallback
-  list.push(...SERVER_KEYS.filter(k => k !== userKey));
-  
-  return [...new Set(list)]; // Remove duplicates
-}
 
 function isFailedResponse(data: any): boolean {
   if (!data) return true;
