@@ -206,7 +206,7 @@ app.get('/api/lookup', async (req: Request, res: Response) => {
   const result = await fetchWithKeyRotation(url, userKey);
 
   if (!result.success) {
-    return res.status(503).json({ success: false, error: 'API_POOL_EXHAUSTED', message: result.error });
+    return res.status(503).json({ success: false, error: result.error, message: result.error });
   }
 
   const user = extractUserObject(result.data);
@@ -283,7 +283,7 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
   ]);
 
   if (!infoResult.success) {
-    return res.status(503).json({ success: false, error: 'API_POOL_EXHAUSTED', message: infoResult.error });
+    return res.status(503).json({ success: false, error: infoResult.error, message: infoResult.error });
   }
 
   if (!userKey) consumeUse(ip);
