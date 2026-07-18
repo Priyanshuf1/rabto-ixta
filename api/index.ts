@@ -305,7 +305,7 @@ app.get('/api/lookup', async (req: Request, res: Response) => {
 // ─── Media endpoint ───────────────────────────────────────────────────────────
 app.get('/api/media/:userId', async (req: Request, res: Response) => {
   const userId = req.params.userId;
-  const userKey = req.query.key as string | undefined;
+  const userKey = (req.headers['x-api-key'] as string) || undefined;
   const ip = getIp(req);
 
   // Validate userId to be numeric string only
@@ -327,29 +327,30 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
 
   console.log(`[MEDIA] Fetching media for userId: ${userId}, hasUserKey: ${!!userKey}`);
 
-  const results = await Promise.allSettled([
-    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/info/?id_user=${userId}`, userKey, 'info'),
-    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/similar_accounts/?id_user=${userId}`, userKey, 'similar'),
-    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/followers/?id_user=${userId}`, userKey, 'followers'),
-    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/following/?id_user=${userId}`, userKey, 'following')
-  ]);
+  const infoResult = await fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/info/?id_user=${userId}`, userKey, 'info');
 
-  const [infoResult, similarResult, followersResult, followingResult] = results;
-
-  const infoResolved = infoResult.status === 'fulfilled' ? infoResult.value : { success: false, error: 'Unhandled rejection' };
-  
-  if (!infoResolved.success) {
-    console.error(`[MEDIA] Failed to fetch info for ${userId}:`, infoResolved.error);
-    return res.status(503).json({ success: false, error: infoResolved.error });
+  if (!infoResult.success) {
+    console.error(`[MEDIA] Failed to fetch info for ${userId}:`, infoResult.error);
+    return res.status(503).json({ success: false, error: infoResult.error });
   }
 
   // Only consume free use if successful and no user key
   if (!userKey) await consumeUse(ip);
 
-  const userInfo = extractUserObject(infoResolved.data);
+  // Fetch the rest concurrently to save time, but AFTER info succeeds
+  // This reduces concurrent API rate limit pressure on free keys
+  const otherResults = await Promise.allSettled([
+    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/similar_accounts/?id_user=${userId}`, userKey, 'similar'),
+    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/followers/?id_user=${userId}`, userKey, 'followers'),
+    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/following/?id_user=${userId}`, userKey, 'following')
+  ]);
+
+  const userInfo = extractUserObject(infoResult.data);
   
   const extractData = (result: PromiseSettledResult<any>) => 
     result.status === 'fulfilled' && result.value.success ? result.value.data : {};
+
+  const [similarResult, followersResult, followingResult] = otherResults;
 
   const similarData = extractData(similarResult);
   const followersData = extractData(followersResult);
