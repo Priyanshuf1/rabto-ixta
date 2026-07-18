@@ -116,15 +116,16 @@ export default function App() {
         if (data.images && data.images.length > 0) {
           setCarouselImages(data.images);
         } else {
-          setCarouselImages([{ id: 'error-1', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80', caption: 'No similar accounts found' }]);
+          setCarouselImages([{ id: 'error-1', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80', caption: 'No images found' }]);
         }
       } else {
-        // Fallback if no images are returned or API fails
-        setCarouselImages([{ id: 'error-1', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80', caption: 'API Error: No data returned' }]);
+        // Show actual backend error if available
+        const errorMsg = data.error || 'API Error: No data returned';
+        setCarouselImages([{ id: 'error-1', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80', caption: errorMsg }]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch media:", error);
-      setCarouselImages([{ id: 'error-1', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80', caption: 'Failed to connect to backend' }]);
+      setCarouselImages([{ id: 'error-1', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80', caption: error.message || 'Failed to connect to backend' }]);
     }
   };
 
