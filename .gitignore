@@ -13,8 +13,6 @@ frontend/node_modules/
 backend/node_modules/
 
 # Build output
-frontend/dist/
-backend/dist/
 
 # Environment files
 .env
@@ -35,4 +33,3 @@ Thumbs.db
 *.swo
 
 .vercel
-.env*
