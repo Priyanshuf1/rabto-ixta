@@ -58,7 +58,6 @@ export default function App() {
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
   const [targetId, setTargetId] = useState<string>('');
   const [carouselImages, setCarouselImages] = useState<CarouselImage[]>(INITIAL_IMAGES);
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('rapidApiKey') || '');
 
   // Called when Phase 1 finishes: Username -> User ID
   const handleResolveId = (username: string, userId: string, userData?: any) => {
@@ -89,11 +88,12 @@ export default function App() {
     }));
 
     try {
-      const response = await fetch(`/api/media/${idOrUsername}`, {
-        headers: {
-          'x-api-key': apiKey
-        }
-      });
+      // Use the saved key from localStorage if available
+      const savedKey = localStorage.getItem('rabto_api_key') || '';
+      const headers: Record<string, string> = {};
+      if (savedKey) headers['x-api-key'] = savedKey;
+
+      const response = await fetch(`/api/media/${idOrUsername}`, { headers });
       const data = await response.json();
       
       if (data.success) {
@@ -143,47 +143,6 @@ export default function App() {
     setCarouselImages((prev) => prev.filter((img) => img.id !== id));
   };
 
-  if (!apiKey) {
-    return (
-      <div className="min-h-screen bg-[#070b12] text-green-400 font-mono flex items-center justify-center p-4 selection:bg-green-500 selection:text-black">
-        <div className="absolute inset-0 bg-grid opacity-[0.03] pointer-events-none" />
-        <div className="max-w-md w-full bg-[#0a101d]/90 border border-green-500/30 p-6 rounded-lg glow-green relative z-10 space-y-4">
-          <h2 className="text-xl font-bold flex items-center gap-2 tracking-wider">
-            <Settings size={20} className="text-green-500" />
-            API KEY REQUIRED
-          </h2>
-          <p className="text-xs text-green-500/70 leading-relaxed">
-            To use this tool, you must provide your own RapidAPI key for the FlashAPI1 service. Your key is stored securely in your browser's local storage.
-          </p>
-          <div className="bg-black/60 p-4 rounded border border-green-500/20 text-[11px] text-green-500/80 space-y-2">
-            <div>1. Go to <a href="https://rapidapi.com/for-sharm/api/flashapi1" target="_blank" rel="noreferrer" className="text-green-300 underline font-bold hover:text-green-200">FlashAPI1 on RapidAPI</a></div>
-            <div>2. Create a free account or login.</div>
-            <div>3. Subscribe to the free Basic plan.</div>
-            <div>4. Copy your <span className="font-bold text-green-400">X-RapidAPI-Key</span> and paste it below.</div>
-          </div>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            const val = new FormData(e.currentTarget).get('apiKey') as string;
-            if (val.trim()) {
-              localStorage.setItem('rapidApiKey', val.trim());
-              setApiKey(val.trim());
-            }
-          }} className="space-y-3 pt-2">
-            <input 
-              name="apiKey"
-              type="text" 
-              placeholder="Paste your RapidAPI Key here..."
-              required
-              className="w-full bg-black border border-green-500/30 rounded px-3 py-2 text-green-400 focus:outline-none focus:border-green-400 placeholder:text-green-900/60"
-            />
-            <button type="submit" className="w-full bg-green-500 hover:bg-green-400 text-black font-bold py-2 rounded transition-colors text-xs tracking-wider">
-              SAVE KEY & INITIALIZE
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#070b12] text-green-400 font-mono relative overflow-hidden flex flex-col justify-between selection:bg-green-500 selection:text-black">
@@ -219,25 +178,6 @@ export default function App() {
               <span className="w-2 h-2 rounded-full bg-green-500 animate-ping" />
               <span>DEVELOPER: PRIYANSHU AWASTHI</span>
             </div>
-            
-            <div className="flex flex-col items-end gap-1">
-              <button 
-                onClick={() => {
-                  localStorage.removeItem('rapidApiKey');
-                  setApiKey('');
-                }}
-                className="flex items-center gap-1.5 bg-red-950/40 hover:bg-red-900/40 border border-red-500/30 px-3 py-1.5 rounded text-[10px] text-red-400 font-bold transition-colors w-full sm:w-auto justify-center"
-              >
-                <Settings size={12} />
-                CHANGE API KEY
-              </button>
-              
-              {apiKey && (
-                <div className="text-[9px] text-green-500/50 font-mono text-right w-full">
-                  ACTIVE KEY: {apiKey.substring(0, 5)}...{apiKey.substring(apiKey.length - 5)}
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </header>
@@ -258,8 +198,7 @@ export default function App() {
 
         {/* COMPONENT 1 & 2: LOOKUP AND TARGET STREAM LOADER */}
         <section className="space-y-6">
-            <InstagramLookup
-              apiKey={apiKey}
+          <InstagramLookup
               onResolveId={(username, userId, data) => {
                 setTargetId(userId);
                 handleResolveId(username, userId, data);
