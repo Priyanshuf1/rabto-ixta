@@ -3,158 +3,165 @@
 /**
  * rabto-ixta CLI
  * Launches the Instagram data extraction tool on your local device.
- * Usage: npx rabto-ixta
  */
 
-import { execSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
-
 import net from 'net';
+import http from 'http';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-let PORT = parseInt(process.env.PORT) || 3002;
 
-// ─── Find Available Port ──────────────────────────────────────────────────────
-async function getAvailablePort(startPort) {
+const args = process.argv.slice(2);
+let requestedPort = null;
+let noOpen = false;
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--help') {
+    console.log('Usage: rabto-ixta [options]');
+    console.log('');
+    console.log('Options:');
+    console.log('  --port <number>   Specify the port to run the server on');
+    console.log('  --no-open         Do not automatically open the browser');
+    console.log('  --help            Show this help message');
+    console.log('  --version         Show the version');
+    process.exit(0);
+  } else if (args[i] === '--version') {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+    console.log(`v${pkg.version}`);
+    process.exit(0);
+  } else if (args[i] === '--port' && args[i + 1]) {
+    requestedPort = parseInt(args[i + 1], 10);
+    i++;
+  } else if (args[i] === '--no-open') {
+    noOpen = true;
+  }
+}
+
+async function isPortAvailable(port) {
   return new Promise((resolve) => {
     const server = net.createServer();
-    server.listen(startPort, () => {
-      const { port } = server.address();
-      server.close(() => resolve(port));
+    server.once('error', (err) => {
+      resolve(false);
     });
-    server.on('error', () => {
-      resolve(getAvailablePort(startPort + 1));
+    server.once('listening', () => {
+      server.close();
+      resolve(true);
     });
+    server.listen(port);
   });
 }
 
-// ─── Banner ───────────────────────────────────────────────────────────────────
-console.log('\x1b[32m'); // Green
-console.log('  ██████╗  █████╗ ██████╗ ████████╗ ██████╗      ██╗██╗  ██╗████████╗ █████╗ ');
-console.log('  ██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██╔═══██╗     ██║╚██╗██╔╝╚══██╔══╝██╔══██╗');
-console.log('  ██████╔╝███████║██████╔╝   ██║   ██║   ██║     ██║ ╚███╔╝    ██║   ███████║');
-console.log('  ██╔══██╗██╔══██║██╔══██╗   ██║   ██║   ██║     ██║ ██╔██╗    ██║   ██╔══██║');
-console.log('  ██║  ██║██║  ██║██████╔╝   ██║   ╚██████╔╝     ██║██╔╝ ██╗   ██║   ██║  ██║');
-console.log('  ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝    ╚═╝    ╚═════╝      ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝');
-console.log('\x1b[0m');
-console.log('\x1b[90m  Instagram Data Extraction Tool — by Priyanshu Awasthi  v1.0.0\x1b[0m');
-console.log('');
-
-// ─── Check Node version ───────────────────────────────────────────────────────
-const nodeVer = parseInt(process.version.slice(1));
-if (nodeVer < 18) {
-  console.error('\x1b[31m❌ Node.js 18+ is required. Download it at https://nodejs.org\x1b[0m');
-  process.exit(1);
+async function getAvailablePort(startPort) {
+  let port = startPort;
+  while (!(await isPortAvailable(port))) {
+    port++;
+  }
+  return port;
 }
 
-// ─── Ensure backend dependencies are installed ────────────────────────────────
-const backendModules = path.join(__dirname, 'backend', 'node_modules');
-if (!fs.existsSync(backendModules)) {
-  console.log('📦 Installing backend dependencies (first run only)...');
-  try {
-    execSync('npm install', { cwd: path.join(__dirname, 'backend'), stdio: 'inherit' });
-  } catch (e) {
-    console.error('\x1b[31m❌ Failed to install backend dependencies.\x1b[0m');
-    process.exit(1);
-  }
-}
+function checkBackendReady(port, retries = 20) {
+  return new Promise((resolve) => {
+    const req = http.get(`http://localhost:${port}/api/status`, (res) => {
+      if (res.statusCode === 200) resolve(true);
+      else retry();
+    });
+    req.on('error', retry);
+    req.setTimeout(500, () => {
+      req.destroy();
+      retry();
+    });
 
-// ─── Build frontend if dist doesn't exist ─────────────────────────────────────
-const distPath = path.join(__dirname, 'frontend', 'dist');
-const indexHtml = path.join(distPath, 'index.html');
-
-if (!fs.existsSync(indexHtml)) {
-  console.log('📦 Building frontend (first run only — takes ~30 seconds)...');
-  
-  const frontendModules = path.join(__dirname, 'frontend', 'node_modules');
-  if (!fs.existsSync(frontendModules)) {
-    console.log('   Installing frontend dependencies...');
-    execSync('npm install', { cwd: path.join(__dirname, 'frontend'), stdio: 'inherit' });
-  }
-  
-  try {
-    execSync('npm run build', { cwd: path.join(__dirname, 'frontend'), stdio: 'inherit' });
-    console.log('\x1b[32m✅ Frontend built successfully!\x1b[0m');
-  } catch (e) {
-    console.error('\x1b[31m❌ Frontend build failed.\x1b[0m');
-    process.exit(1);
-  }
-}
-
-// ─── Find tsx executable ──────────────────────────────────────────────────────
-function findTsx() {
-  // Try local backend node_modules first
-  const localTsx = path.join(__dirname, 'backend', 'node_modules', '.bin', 'tsx');
-  const localTsxCmd = process.platform === 'win32' ? localTsx + '.cmd' : localTsx;
-  if (fs.existsSync(localTsxCmd)) return localTsxCmd;
-  if (fs.existsSync(localTsx)) return localTsx;
-  
-  // Try global tsx
-  try {
-    execSync('tsx --version', { stdio: 'pipe' });
-    return 'tsx';
-  } catch (_) {}
-  
-  // Try npx tsx
-  return 'npx tsx';
+    function retry() {
+      if (retries <= 0) resolve(false);
+      else setTimeout(() => checkBackendReady(port, retries - 1).then(resolve), 500);
+    }
+  });
 }
 
 async function start() {
-  PORT = await getAvailablePort(PORT);
+  console.log('\x1b[32m');
+  console.log('  ██████╗  █████╗ ██████╗ ████████╗ ██████╗      ██╗██╗  ██╗████████╗ █████╗ ');
+  console.log('  ██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██╔═══██╗     ██║╚██╗██╔╝╚══██╔══╝██╔══██╗');
+  console.log('  ██████╔╝███████║██████╔╝   ██║   ██║   ██║     ██║ ╚███╔╝    ██║   ███████║');
+  console.log('  ██╔══██╗██╔══██║██╔══██╗   ██║   ██║   ██║     ██║ ██╔██╗    ██║   ██╔══██║');
+  console.log('  ██║  ██║██║  ██║██████╔╝   ██║   ╚██████╔╝     ██║██╔╝ ██╗   ██║   ██║  ██║');
+  console.log('  ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝    ╚═╝    ╚═════╝      ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝');
+  console.log('\x1b[0m');
+  console.log('\x1b[90m  Instagram Data Extraction Tool — by Priyanshu Awasthi  v1.0.0\x1b[0m');
+  console.log('');
 
-  // ─── Start the backend server ─────────────────────────────────────────────────
+  const distPath = path.join(__dirname, 'frontend', 'dist', 'index.html');
+  if (!fs.existsSync(distPath)) {
+    console.error('\x1b[31m❌ Rabto Ixta has not been built yet.\x1b[0m');
+    console.error('Run:');
+    console.error('  npm install');
+    console.error('  npm run build');
+    console.error('  npm start');
+    process.exit(1);
+  }
+
+  let finalPort = requestedPort || 3002;
+  const available = await isPortAvailable(finalPort);
+  if (!available) {
+    if (requestedPort) {
+      console.error(`\x1b[31m❌ Error: Port ${requestedPort} is already occupied.\x1b[0m`);
+      process.exit(1);
+    } else {
+      console.log(`⚠️  Port ${finalPort} is occupied. Finding another port...`);
+      finalPort = await getAvailablePort(finalPort + 1);
+    }
+  }
+
   const serverFile = path.join(__dirname, 'backend', 'src', 'server.ts');
-  const tsx = findTsx();
-
-  console.log(`\x1b[33m🚀 Starting rabto-ixta on http://localhost:${PORT}...\x1b[0m`);
-
-  const [cmd, ...args] = tsx.split(' ');
-  const serverProcess = spawn(cmd, [...args, serverFile], {
+  const serverArgs = ['--import', 'tsx', serverFile];
+  const serverProcess = spawn('node', serverArgs, {
     cwd: path.join(__dirname, 'backend'),
     stdio: 'inherit',
-    env: { ...process.env, PORT: String(PORT) },
-    shell: process.platform === 'win32'
+    env: { ...process.env, PORT: String(finalPort) },
+    shell: false
   });
 
   serverProcess.on('error', (err) => {
     console.error('\x1b[31m❌ Failed to start server:', err.message, '\x1b[0m');
-    console.error('   Try running manually: cd backend && npx tsx src/server.ts');
     process.exit(1);
   });
 
   serverProcess.on('exit', (code) => {
     if (code !== 0 && code !== null) {
       console.error(`\x1b[31m❌ Server exited with code ${code}\x1b[0m`);
+      process.exit(code);
     }
   });
 
-  // ─── Open browser ─────────────────────────────────────────────────────────────
-  setTimeout(() => {
-    const url = `http://localhost:${PORT}`;
-    console.log(`\n\x1b[32m✅ rabto-ixta is live! → ${url}\x1b[0m`);
-    console.log('\x1b[90m   Press Ctrl+C to stop\x1b[0m\n');
+  console.log(`\x1b[33m⏳ Waiting for server to become ready on http://localhost:${finalPort}...\x1b[0m`);
+  const ready = await checkBackendReady(finalPort);
 
-    try {
-      if (process.platform === 'win32') {
-        execSync(`start "" "${url}"`, { shell: true });
-      } else if (process.platform === 'darwin') {
-        execSync(`open "${url}"`);
-      } else {
-        execSync(`xdg-open "${url}"`);
-      }
-    } catch (_) {
-      // Browser open failed — user can manually open the URL
-    }
-  }, 2000);
+  if (!ready) {
+    console.error('\x1b[31m❌ Server failed to respond in time.\x1b[0m');
+    serverProcess.kill('SIGTERM');
+    process.exit(1);
+  }
 
-  // ─── Handle exit ──────────────────────────────────────────────────────────────
-  process.on('SIGINT', () => {
+  const url = `http://localhost:${finalPort}`;
+  console.log(`\n\x1b[32m✅ Rabto Ixta is running:\n${url}\x1b[0m`);
+  console.log('\x1b[90m   Press Ctrl+C to stop\x1b[0m\n');
+
+  if (!noOpen) {
+    const startCmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+    spawn(startCmd, [url], { shell: process.platform === 'win32' });
+  }
+
+  const shutdown = () => {
     console.log('\n\x1b[33m👋 Shutting down rabto-ixta...\x1b[0m');
     serverProcess.kill('SIGTERM');
     process.exit(0);
-  });
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 start().catch(console.error);
