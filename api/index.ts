@@ -1,6 +1,5 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import { Redis } from '@upstash/redis';
 
 const app = express();
 app.use(cors({ origin: '*' }));
@@ -13,23 +12,32 @@ const SERVER_KEYS = [
   'd1c2c2d744msh75922ce8cfb3825p15e4d4jsn04edfae5787'
 ];
 
-const redis = (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL) 
-  ? new Redis({
-      url: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '',
-      token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '',
-    })
-  : null;
-
-const userContributedKeys: string[] = [];
+const JSONBLOB_URL = 'https://jsonblob.com/api/jsonBlob/019f74ac-a8aa-71ff-90f1-584dea282c7a';
 
 async function getDbKeys(): Promise<string[]> {
-  if (!redis) return [...userContributedKeys];
   try {
-    const keys = await redis.smembers('valid_api_keys');
-    return keys as string[];
+    const res = await fetch(JSONBLOB_URL);
+    const data = await res.json();
+    return Array.isArray(data?.keys) ? data.keys : [];
   } catch (err) {
-    console.error('Redis error:', err);
-    return [...userContributedKeys];
+    console.error('JsonBlob GET error:', err);
+    return [];
+  }
+}
+
+async function saveKeyToDb(key: string) {
+  try {
+    const keys = await getDbKeys();
+    if (!keys.includes(key)) {
+      keys.push(key);
+      await fetch(JSONBLOB_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys })
+      });
+    }
+  } catch (err) {
+    console.error('JsonBlob PUT error:', err);
   }
 }
 
@@ -188,7 +196,7 @@ app.get('/api/status', async (req: Request, res: Response) => {
     freeUsesRemaining: remaining,
     freeUsesPerDay: FREE_PER_DAY,
     totalKeys: SERVER_KEYS.length + dbKeys.length,
-    databaseConnected: !!redis
+    databaseConnected: true
   });
 });
 
@@ -223,18 +231,12 @@ app.post('/api/contribute-key', async (req: Request, res: Response) => {
   }
 
   // Save to DB
-  if (redis) {
-    await redis.sadd('valid_api_keys', key);
-  } else {
-    if (!userContributedKeys.includes(key)) {
-      userContributedKeys.push(key);
-    }
-  }
+  await saveKeyToDb(key);
 
   const dbKeys = await getDbKeys();
   res.json({
     success: true,
-    message: redis ? 'Key validated and saved to persistent database!' : 'Key validated and saved to temporary memory (No Database Connected).',
+    message: 'Key validated and saved permanently!',
     totalKeys: SERVER_KEYS.length + dbKeys.length
   });
 });
