@@ -146,7 +146,7 @@ export default function PhotoCarousel({
                   onClick={() => setSelectedImage(img)}
                 >
                   <img
-                    src={img.url}
+                    src={`/api/proxy-image?url=${encodeURIComponent(img.url)}`}
                     alt={img.caption}
                     className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-300"
                     referrerPolicy="no-referrer"
@@ -258,7 +258,7 @@ export default function PhotoCarousel({
             <div className="p-4 flex flex-col items-center">
               <div className="relative w-full aspect-square border border-green-500/20 rounded overflow-hidden bg-zinc-950">
                 <img
-                  src={selectedImage.url}
+                  src={`/api/proxy-image?url=${encodeURIComponent(selectedImage.url)}`}
                   alt={selectedImage.caption}
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
