@@ -15,42 +15,58 @@ const SERVER_KEYS = [
 const userContributedKeys: string[] = [];
 
 function getKeyList(userKey?: string): string[] {
-  const extra = [...userContributedKeys];
-  if (userKey && !SERVER_KEYS.includes(userKey) && !extra.includes(userKey)) {
-    extra.unshift(userKey);
+  const list: string[] = [];
+  
+  // User provided key ALWAYS goes first (highest priority)
+  if (userKey && userKey.length > 10) {
+    list.push(userKey);
   }
-  // User provided key first, then contributed keys, then server keys
-  const list = [...extra, ...SERVER_KEYS];
-  // If user provided a key that is ALREADY in server keys, move it to the front
-  if (userKey && SERVER_KEYS.includes(userKey)) {
-    return [userKey, ...list.filter(k => k !== userKey)];
-  }
-  return list;
+  
+  // Then contributed keys
+  list.push(...userContributedKeys.filter(k => k !== userKey));
+  
+  // Finally server keys as fallback
+  list.push(...SERVER_KEYS.filter(k => k !== userKey));
+  
+  return [...new Set(list)]; // Remove duplicates
 }
 
 function isFailedResponse(data: any): boolean {
-  if (!data || !data.message) return false;
-  const msg = String(data.message).toLowerCase();
-  return (
-    msg.includes('not subscribed') ||
-    msg.includes('quota') ||
-    msg.includes('exceeded') ||
-    msg.includes('unauthorized') ||
-    msg.includes('invalid api key') ||
-    msg.includes('access denied') ||
-    msg.includes('forbidden')
-  );
+  if (!data) return true;
+  if (data.message) {
+    const msg = String(data.message).toLowerCase();
+    return (
+      msg.includes('not subscribed') ||
+      msg.includes('quota') ||
+      msg.includes('exceeded') ||
+      msg.includes('unauthorized') ||
+      msg.includes('invalid api key') ||
+      msg.includes('access denied') ||
+      msg.includes('forbidden') ||
+      msg.includes('error')
+    );
+  }
+  // If no user data found, consider it failed
+  if (!data.user && !data.users && !data.pk && !data.pk_id && !data.id) {
+    return true;
+  }
+  return false;
 }
 
 async function fetchWithKeyRotation(
   url: string,
   userKey?: string
-): Promise<{ success: boolean; data?: any; error?: string }> {
+): Promise<{ success: boolean; data?: any; error?: string; usedKey?: string }> {
   const keys = getKeyList(userKey);
-  let userKeyErrorDetail = '';
+  let lastError = '';
+  let userKeyError = '';
+
+  console.log(`[API] Trying ${keys.length} keys for URL: ${url.substring(0, 60)}...`);
 
   for (const key of keys) {
     try {
+      console.log(`[API] Trying key: ${key.substring(0, 12)}...`);
+      
       const res = await fetch(url, {
         headers: {
           'X-RapidAPI-Key': key,
@@ -59,32 +75,41 @@ async function fetchWithKeyRotation(
       });
 
       const data = await res.json();
+      console.log(`[API] Response for key ${key.substring(0, 12)}:`, JSON.stringify(data).substring(0, 200));
 
       if (!isFailedResponse(data)) {
-        return { success: true, data };
+        console.log(`[API] Success with key: ${key.substring(0, 12)}...`);
+        return { success: true, data, usedKey: key.substring(0, 8) + '...' };
       }
+
+      // Save error message
+      lastError = data.message || 'Unknown error';
+      console.warn(`[API] Key ${key.substring(0, 12)}... failed: ${lastError}`);
       
-      // If this was the specific key the user provided, save the exact error
+      // If this was the user's key, save the specific error
       if (key === userKey) {
-        userKeyErrorDetail = data.message;
+        userKeyError = lastError;
       }
-      console.warn(`Key ${key.substring(0, 8)}... failed: ${data.message}`);
-    } catch (err) {
-      console.warn(`Key ${key.substring(0, 8)}... threw error`);
+    } catch (err: any) {
+      console.warn(`[API] Key ${key.substring(0, 12)}... threw error:`, err.message);
+      lastError = err.message || 'Network error';
     }
   }
 
-  // If the user provided a key and it failed, give them the exact reason from RapidAPI!
-  if (userKey) {
+  // If user's key was tried and failed, give specific error
+  if (userKey && userKeyError) {
     return {
       success: false,
-      error: `RapidAPI rejected your key: "${userKeyErrorDetail || 'Invalid or expired'}". Please ensure you are subscribed to the basic plan at https://rapidapi.com/for-sharm/api/flashapi1`
+      error: `Your API key was rejected: "${userKeyError}". Please verify your key at https://rapidapi.com/for-sharm/api/flashapi1`
     };
   }
 
+  // If we get here, all keys failed
   return {
     success: false,
-    error: 'Server API keys are exhausted. Please enter your own RapidAPI key to continue.'
+    error: userKey 
+      ? `All API keys failed. Last error: "${lastError}". Server keys may be exhausted.`
+      : 'Server API keys exhausted. Please provide your own RapidAPI key.'
   };
 }
 
@@ -171,6 +196,7 @@ app.get('/api/lookup', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Username is required' });
   }
 
+  // Check rate limit only if no API key provided
   if (!userKey) {
     const { allowed } = checkRateLimit(ip);
     if (!allowed) {
@@ -183,51 +209,45 @@ app.get('/api/lookup', async (req: Request, res: Response) => {
     }
   }
 
-  // --- MOCK RESPONSE FOR USER'S SPECIFIC TEST CASE TO PROVE IT WORKS ---
-  if (username.toLowerCase() === 'shivvi.p') {
-    // If they provided a key, we just give them the mock response immediately
-    // so they see the ID resolve and the media stream load successfully.
-    return res.json({
-      success: true,
-      userId: '72829292895',
-      followers: '10.5K',
-      following: '250',
-      postsCount: 42,
-      profilePic: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-      username: 'shivvi.p',
-      fullName: 'Shivvi',
-      isPrivate: false,
-      freeUsesRemaining: userKey ? null : 0,
-      mocked: true
-    });
-  }
-
-  const url = `https://flashapi1.p.rapidapi.com/ig/info_username/?user=${encodeURIComponent(username)}`;
+  const targetUser = username.trim().replace(/^@/, '').toLowerCase();
+  const url = `https://flashapi1.p.rapidapi.com/ig/info_username/?user=${encodeURIComponent(targetUser)}`;
+  
+  console.log(`[LOOKUP] Looking up username: ${targetUser}, hasUserKey: ${!!userKey}`);
+  
   const result = await fetchWithKeyRotation(url, userKey);
 
   if (!result.success) {
-    return res.status(503).json({ success: false, error: result.error, message: result.error });
+    console.error(`[LOOKUP] Failed for ${targetUser}:`, result.error);
+    return res.status(503).json({ success: false, error: result.error });
   }
 
   const user = extractUserObject(result.data);
   if (!user) {
-    return res.status(404).json({ success: false, error: 'User not found. Check the username and try again.' });
+    console.error(`[LOOKUP] No user data in response for ${targetUser}:`, result.data);
+    return res.status(404).json({ 
+      success: false, 
+      error: 'User not found. The account may not exist or be private.' 
+    });
   }
 
+  // Only consume free use if successful and no user key
   if (!userKey) consumeUse(ip);
 
-  res.json({
+  const response = {
     success: true,
     userId: getUserId(user),
     followers: user.follower_count,
     following: user.following_count,
     postsCount: user.media_count,
     profilePic: user.profile_pic_url || user.profile_pic_url_hd || '',
-    username: user.username || username,
+    username: user.username || targetUser,
     fullName: user.full_name || '',
     isPrivate: user.is_private || false,
     freeUsesRemaining: userKey ? null : 0
-  });
+  };
+
+  console.log(`[LOOKUP] Success for ${targetUser}: ID=${response.userId}`);
+  res.json(response);
 });
 
 // ─── Media endpoint ───────────────────────────────────────────────────────────
@@ -240,6 +260,7 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'User ID is required' });
   }
 
+  // Check rate limit only if no API key provided
   if (!userKey) {
     const { allowed } = checkRateLimit(ip);
     if (!allowed) {
@@ -251,25 +272,7 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
     }
   }
 
-  // --- MOCK RESPONSE FOR USER'S SPECIFIC TEST CASE TO PROVE IT WORKS ---
-  if (userId === '72829292895') {
-    return res.json({
-      success: true,
-      images: [
-        { id: 'm1', url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300&q=80', caption: '@shivvi.p image 1' },
-        { id: 'm2', url: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=300&q=80', caption: '@shivvi.p image 2' },
-        { id: 'm3', url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=300&q=80', caption: '@shivvi.p image 3' }
-      ],
-      userInfo: {
-        username: 'shivvi.p',
-        followers: '10.5K',
-        following: '250',
-        postsCount: 42,
-        profilePic: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'
-      },
-      mocked: true
-    });
-  }
+  console.log(`[MEDIA] Fetching media for userId: ${userId}, hasUserKey: ${!!userKey}`);
 
   const [infoResult, similarResult] = await Promise.all([
     fetchWithKeyRotation(
@@ -283,9 +286,11 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
   ]);
 
   if (!infoResult.success) {
-    return res.status(503).json({ success: false, error: infoResult.error, message: infoResult.error });
+    console.error(`[MEDIA] Failed to fetch info for ${userId}:`, infoResult.error);
+    return res.status(503).json({ success: false, error: infoResult.error });
   }
 
+  // Only consume free use if successful and no user key
   if (!userKey) consumeUse(ip);
 
   const userInfo = extractUserObject(infoResult.data);
@@ -301,6 +306,8 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
     }))
     .filter((img: any) => img.url);
 
+  console.log(`[MEDIA] Success for ${userId}: ${images.length} images found`);
+  
   res.json({
     success: true,
     images,
