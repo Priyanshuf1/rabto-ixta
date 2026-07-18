@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Redis } from '@upstash/redis';
 
 dotenv.config();
 
@@ -22,9 +23,27 @@ const SERVER_KEYS = [
   'd1c2c2d744msh75922ce8cfb3825p15e4d4jsn04edfae5787'
 ];
 
+const redis = (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL) 
+  ? new Redis({
+      url: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '',
+      token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '',
+    })
+  : null;
+
 const userContributedKeys: string[] = [];
 
-function getKeyList(userKey?: string): string[] {
+async function getDbKeys(): Promise<string[]> {
+  if (!redis) return [...userContributedKeys];
+  try {
+    const keys = await redis.smembers('valid_api_keys');
+    return keys as string[];
+  } catch (err) {
+    console.error('Redis error:', err);
+    return [...userContributedKeys];
+  }
+}
+
+async function getKeyList(userKey?: string): Promise<string[]> {
   const list: string[] = [];
   
   // User provided key ALWAYS goes first (highest priority)
@@ -32,8 +51,9 @@ function getKeyList(userKey?: string): string[] {
     list.push(userKey);
   }
   
-  // Then contributed keys
-  list.push(...userContributedKeys.filter(k => k !== userKey));
+  // Then contributed keys from DB
+  const dbKeys = await getDbKeys();
+  list.push(...dbKeys.filter(k => k !== userKey));
   
   // Finally server keys as fallback
   list.push(...SERVER_KEYS.filter(k => k !== userKey));
@@ -67,7 +87,7 @@ async function fetchWithKeyRotation(
   url: string,
   userKey?: string
 ): Promise<{ success: boolean; data?: any; error?: string; usedKey?: string }> {
-  const keys = getKeyList(userKey);
+  const keys = await getKeyList(userKey);
   let lastError = '';
   let userKeyError = '';
 
@@ -177,31 +197,64 @@ function getRemainingUses(ip: string): number {
 const distPath = path.join(__dirname, '..', '..', 'frontend', 'dist');
 app.use(express.static(distPath));
 
-// ─── Status ──────────────────────────────────────────────────────────────────
-app.get('/api/status', (req: Request, res: Response) => {
+// ─── Status endpoint ──────────────────────────────────────────────────────────
+app.get('/api/status', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const remaining = getRemainingUses(ip);
+  const dbKeys = await getDbKeys();
   res.json({ 
     success: true, 
     freeUsesRemaining: remaining, 
     freeUsesPerDay: FREE_PER_DAY, 
-    totalKeys: SERVER_KEYS.length + userContributedKeys.length 
+    totalKeys: SERVER_KEYS.length + dbKeys.length,
+    databaseConnected: !!redis
   });
 });
 
-// ─── Contribute Key ───────────────────────────────────────────────────────────
-app.post('/api/contribute-key', (req: Request, res: Response) => {
+// ─── Contribute Key endpoint ──────────────────────────────────────────────────
+app.post('/api/contribute-key', async (req: Request, res: Response) => {
   const { key } = req.body;
   if (!key || key.length < 10) {
     return res.status(400).json({ success: false, error: 'Invalid key' });
   }
-  if (!userContributedKeys.includes(key) && !SERVER_KEYS.includes(key)) {
-    userContributedKeys.unshift(key);
+  
+  // Validate the key with a lightweight request
+  try {
+    const testUrl = 'https://flashapi1.p.rapidapi.com/ig/info_username/?user=instagram';
+    const testRes = await fetch(testUrl, {
+      headers: {
+        'X-RapidAPI-Key': key,
+        'X-RapidAPI-Host': 'flashapi1.p.rapidapi.com'
+      }
+    });
+    const testData = await testRes.json();
+    if (isFailedResponse(testData)) {
+      return res.status(400).json({
+        success: false,
+        error: `Key validation failed. The API rejected this key (quota exceeded or invalid).`
+      });
+    }
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: `Network error during key validation.`
+    });
   }
+
+  // Save to DB
+  if (redis) {
+    await redis.sadd('valid_api_keys', key);
+  } else {
+    if (!userContributedKeys.includes(key)) {
+      userContributedKeys.push(key);
+    }
+  }
+
+  const dbKeys = await getDbKeys();
   res.json({ 
     success: true, 
-    message: 'Key added! You now have unlimited access.', 
-    totalKeys: SERVER_KEYS.length + userContributedKeys.length 
+    message: redis ? 'Key validated and saved to persistent database!' : 'Key validated and saved to temporary memory (No Database Connected).', 
+    totalKeys: SERVER_KEYS.length + dbKeys.length 
   });
 });
 
