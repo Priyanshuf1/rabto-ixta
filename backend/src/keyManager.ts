@@ -1,93 +1,99 @@
 /**
  * Key Manager - API Key Rotation Pool
- * Manages server-side keys + user-contributed keys with smart rotation.
- * If a key fails (quota/not-subscribed), it automatically tries the next one.
+ * User key always tried FIRST. Server keys as fallback.
  */
 
-// Server-side keys (3 keys from the app owner)
 const SERVER_KEYS: string[] = [
   'REDACTED_API_KEY_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
   '626dc32a51msh5af4ac2415b9168p1f6ec2jsnafd7f2c110b',
   'd1c2c2d744msh75922ce8cfb3825p15e4d4jsn04edfae5787'
 ];
 
-// User-contributed keys (added at runtime)
-const userKeys: Set<string> = new Set();
-
-let currentKeyIndex = 0;
+const userKeys: string[] = [];
 
 export function addUserKey(key: string): void {
-  if (key && key.length > 10 && !SERVER_KEYS.includes(key)) {
-    userKeys.add(key);
-    console.log(`✅ New user key added to pool. Pool size: ${getAllKeys().length}`);
+  if (key && key.length > 10 && !SERVER_KEYS.includes(key) && !userKeys.includes(key)) {
+    userKeys.unshift(key); // add to the FRONT so it's tried first
+    console.log(`✅ User key added to pool. Total keys: ${getKeyList().length}`);
   }
 }
 
-export function getAllKeys(): string[] {
-  return [...SERVER_KEYS, ...Array.from(userKeys)];
+export function getKeyList(userKey?: string): string[] {
+  // Priority: provided user key → contributed user keys → server keys
+  const list = [...userKeys, ...SERVER_KEYS];
+  if (userKey && !list.includes(userKey)) {
+    list.unshift(userKey); // provided key goes first
+  }
+  return list;
 }
 
 export function getPoolStatus() {
   return {
-    totalKeys: getAllKeys().length,
+    totalKeys: userKeys.length + SERVER_KEYS.length,
     serverKeys: SERVER_KEYS.length,
-    userContributed: userKeys.size
+    userContributed: userKeys.length
   };
 }
 
+export function isFailedResponse(data: any): boolean {
+  if (!data?.message) return false;
+  const msg = String(data.message).toLowerCase();
+  return (
+    msg.includes('not subscribed') ||
+    msg.includes('quota') ||
+    msg.includes('exceeded') ||
+    msg.includes('unauthorized') ||
+    msg.includes('invalid api key') ||
+    msg.includes('access denied') ||
+    msg.includes('forbidden')
+  );
+}
+
 /**
- * Make a RapidAPI request, automatically rotating through the key pool
- * if keys fail due to quota or subscription issues.
+ * Normalize response — API returns EITHER:
+ *   { user: { pk_id, ... } }    ← info endpoint
+ *   { users: [{ pk_id, ... }] } ← info_username endpoint
  */
+export function extractUserObject(data: any): any | null {
+  if (data?.user && typeof data.user === 'object') return data.user;
+  if (Array.isArray(data?.users) && data.users.length > 0) return data.users[0];
+  if (data?.pk || data?.pk_id || data?.id) return data;
+  return null;
+}
+
+export function getUserId(user: any): string {
+  return String(user?.pk_id || user?.pk || user?.id || '');
+}
+
 export async function fetchWithRotation(
-  urlBuilder: (key: string) => string,
-  userProvidedKey?: string
-): Promise<{ data: any; keyUsed: string; success: boolean; error?: string }> {
-  
-  // Build key list: user's key first (priority), then pool
-  const keys = userProvidedKey
-    ? [userProvidedKey, ...getAllKeys()]
-    : getAllKeys();
+  url: string,
+  userKey?: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  const keys = getKeyList(userKey);
 
-  const uniqueKeys = [...new Set(keys)]; // deduplicate
-
-  for (let i = 0; i < uniqueKeys.length; i++) {
-    const key = uniqueKeys[(currentKeyIndex + i) % uniqueKeys.length];
-    
+  for (const key of keys) {
     try {
-      const res = await fetch(urlBuilder(key), {
+      const res = await fetch(url, {
         headers: {
           'X-RapidAPI-Key': key,
           'X-RapidAPI-Host': 'flashapi1.p.rapidapi.com'
         }
       });
-      
       const data = await res.json();
-      
-      const isFailed = data.message && (
-        data.message.toLowerCase().includes('not subscribed') ||
-        data.message.toLowerCase().includes('quota') ||
-        data.message.toLowerCase().includes('exceeded') ||
-        data.message.toLowerCase().includes('invalid') ||
-        data.message.toLowerCase().includes('unauthorized')
-      );
-      
-      if (!isFailed) {
-        // Successful! Advance rotation index
-        currentKeyIndex = (currentKeyIndex + i + 1) % uniqueKeys.length;
-        return { data, keyUsed: key, success: true };
+
+      if (!isFailedResponse(data)) {
+        return { success: true, data };
       }
-      
-      console.warn(`🔑 Key ${key.substring(0, 8)}... failed: ${data.message}. Trying next...`);
-    } catch (err) {
-      console.warn(`🔑 Key ${key.substring(0, 8)}... threw error. Trying next...`);
+      console.warn(`🔑 Key ${key.substring(0, 8)}... failed: ${data.message}`);
+    } catch (_) {
+      console.warn(`🔑 Key ${key.substring(0, 8)}... threw error`);
     }
   }
 
   return {
-    data: null,
-    keyUsed: '',
     success: false,
-    error: 'All API keys in the pool are exhausted or invalid. Please contribute your RapidAPI key.'
+    error: userKeys.length + (userKey ? 1 : 0) === 0
+      ? 'Server API keys are exhausted. Please enter your own RapidAPI key.'
+      : 'All API keys failed. Please check your RapidAPI subscription at rapidapi.com'
   };
 }
