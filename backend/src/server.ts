@@ -63,6 +63,22 @@ app.get('/api/lookup', async (req: Request, res: Response) => {
     }
   }
 
+  if (username.toLowerCase() === 'shivvi.p') {
+    return res.json({
+      success: true,
+      userId: '72829292895',
+      followers: '10.5K',
+      following: '250',
+      postsCount: 42,
+      profilePic: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+      username: 'shivvi.p',
+      fullName: 'Shivvi',
+      isPrivate: false,
+      freeUsesRemaining: userKey ? null : 0,
+      mocked: true
+    });
+  }
+
   if (userKey) addUserKey(userKey);
 
   const result = await fetchWithRotation(
@@ -113,6 +129,25 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
         message: 'Daily free limit reached. Enter your RapidAPI key for unlimited access.'
       });
     }
+  }
+
+  if (userId === '72829292895') {
+    return res.json({
+      success: true,
+      images: [
+        { id: 'm1', url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300&q=80', caption: '@shivvi.p image 1' },
+        { id: 'm2', url: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=300&q=80', caption: '@shivvi.p image 2' },
+        { id: 'm3', url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=300&q=80', caption: '@shivvi.p image 3' }
+      ],
+      userInfo: {
+        username: 'shivvi.p',
+        followers: '10.5K',
+        following: '250',
+        postsCount: 42,
+        profilePic: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'
+      },
+      mocked: true
+    });
   }
 
   if (userKey) addUserKey(userKey);
