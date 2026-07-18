@@ -1,0 +1,6 @@
+{
+  "name": "Instagram ID Lookup GUI",
+  "description": "A retro terminal hacking-style GUI for extracting Instagram User IDs, verifying usernames, and visualizing profile carousel data.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
