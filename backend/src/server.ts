@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
+import { kv } from '@vercel/kv';
 
 dotenv.config();
 
@@ -12,61 +14,46 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-app.use(cors({ origin: '*' }));
+// ─── CORS Configuration ───────────────────────────────────────────────────────
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : [];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.length === 0) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
+
 app.use(express.json());
 
-// ─── Key Pool ───────────────────────────────────────────────────────────────
-const SERVER_KEYS = [
-  '343aa853a7msh1bcf722e1b64529p137288jsnf27fe0e15b25',
-  '626dc32a51msh5af4ac2415b9168p1f6ec2jsnafd7f2c110b',
-  'd1c2c2d744msh75922ce8cfb3825p15e4d4jsn04edfae5787'
-];
+// ─── Key Pool & Configuration ───────────────────────────────────────────────
+const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'flashapi1.p.rapidapi.com';
+const RAPIDAPI_TIMEOUT_MS = parseInt(process.env.RAPIDAPI_TIMEOUT_MS || '10000', 10);
 
-const JSONBLOB_URL = 'https://jsonblob.com/api/jsonBlob/019f74ac-a8aa-71ff-90f1-584dea282c7a';
-
-async function getDbKeys(): Promise<string[]> {
-  try {
-    const res = await fetch(JSONBLOB_URL);
-    const data = await res.json();
-    return Array.isArray(data?.keys) ? data.keys : [];
-  } catch (err) {
-    console.error('JsonBlob GET error:', err);
-    return [];
+function getServerKeys(): string[] {
+  const keys: string[] = [];
+  if (process.env.RAPIDAPI_SERVER_KEY) keys.push(process.env.RAPIDAPI_SERVER_KEY);
+  if (process.env.RAPIDAPI_SERVER_KEYS) {
+    keys.push(...process.env.RAPIDAPI_SERVER_KEYS.split(',').map(k => k.trim()));
   }
-}
-
-async function saveKeyToDb(key: string) {
-  try {
-    const keys = await getDbKeys();
-    if (!keys.includes(key)) {
-      keys.push(key);
-      await fetch(JSONBLOB_URL, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keys })
-      });
-    }
-  } catch (err) {
-    console.error('JsonBlob PUT error:', err);
-  }
+  return [...new Set(keys)];
 }
 
 async function getKeyList(userKey?: string): Promise<string[]> {
   const list: string[] = [];
   
-  // User provided key ALWAYS goes first (highest priority)
-  if (userKey && userKey.length > 10) {
-    list.push(userKey);
+  if (userKey && userKey.trim().length > 10) {
+    list.push(userKey.trim());
   }
   
-  // Then contributed keys from DB
-  const dbKeys = await getDbKeys();
-  list.push(...dbKeys.filter(k => k !== userKey));
+  list.push(...getServerKeys().filter(k => k !== userKey));
   
-  // Finally server keys as fallback
-  list.push(...SERVER_KEYS.filter(k => k !== userKey));
-  
-  return [...new Set(list)]; // Remove duplicates
+  return [...new Set(list)];
 }
 
 function isFailedResponse(data: any): boolean {
@@ -84,7 +71,6 @@ function isFailedResponse(data: any): boolean {
       msg.includes('error')
     );
   }
-  // If no user data found, consider it failed
   if (!data.user && !data.users && !data.pk && !data.pk_id && !data.id) {
     return true;
   }
@@ -93,48 +79,71 @@ function isFailedResponse(data: any): boolean {
 
 async function fetchWithKeyRotation(
   url: string,
-  userKey?: string
+  userKey?: string,
+  endpointName: string = 'unknown'
 ): Promise<{ success: boolean; data?: any; error?: string; usedKey?: string }> {
   const keys = await getKeyList(userKey);
   let lastError = '';
   let userKeyError = '';
 
-  console.log(`[API] Trying ${keys.length} keys for URL: ${url.substring(0, 60)}...`);
-
   for (const key of keys) {
+    const startTime = Date.now();
     try {
-      console.log(`[API] Trying key: ${key.substring(0, 12)}...`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), RAPIDAPI_TIMEOUT_MS);
       
-      const res = await fetch(url, {
+      const options: RequestInit = {
         headers: {
           'X-RapidAPI-Key': key,
-          'X-RapidAPI-Host': 'flashapi1.p.rapidapi.com'
-        }
-      });
-
-      const data = await res.json();
-      console.log(`[API] Response for key ${key.substring(0, 12)}:`, JSON.stringify(data).substring(0, 200));
-
-      if (!isFailedResponse(data)) {
-        console.log(`[API] Success with key: ${key.substring(0, 12)}...`);
-        return { success: true, data, usedKey: key.substring(0, 8) + '...' };
+          'X-RapidAPI-Host': RAPIDAPI_HOST
+        },
+        signal: controller.signal
+      };
+      
+      let res;
+      try {
+        res = await fetch(url, options);
+      } finally {
+        clearTimeout(timeout);
       }
 
-      // Save error message
+      const data = await res.json();
+      const durationMs = Date.now() - startTime;
+      const credentialSource = key === userKey ? 'user' : 'server';
+
+      console.log(JSON.stringify({
+        event: "rapidapi_request",
+        endpoint: endpointName,
+        status: res.status,
+        durationMs,
+        credentialSource
+      }));
+
+      if (!isFailedResponse(data)) {
+        return { success: true, data };
+      }
+
       lastError = data.message || 'Unknown error';
-      console.warn(`[API] Key ${key.substring(0, 12)}... failed: ${lastError}`);
-      
-      // If this was the user's key, save the specific error
       if (key === userKey) {
         userKeyError = lastError;
       }
     } catch (err: any) {
-      console.warn(`[API] Key ${key.substring(0, 12)}... threw error:`, err.message);
-      lastError = err.message || 'Network error';
+      const durationMs = Date.now() - startTime;
+      const credentialSource = key === userKey ? 'user' : 'server';
+      
+      console.log(JSON.stringify({
+        event: "rapidapi_request",
+        endpoint: endpointName,
+        status: err.name === 'AbortError' ? 408 : 500,
+        durationMs,
+        credentialSource
+      }));
+
+      lastError = err.name === 'AbortError' ? 'Request timed out' : (err.message || 'Network error');
+      if (key === userKey) userKeyError = lastError;
     }
   }
 
-  // If user's key was tried and failed, give specific error
   if (userKey && userKeyError) {
     return {
       success: false,
@@ -142,7 +151,6 @@ async function fetchWithKeyRotation(
     };
   }
 
-  // If we get here, all keys failed
   return {
     success: false,
     error: userKey 
@@ -175,19 +183,42 @@ function getClientIp(req: any): string {
   );
 }
 
-function checkFreeUse(ip: string): { allowed: boolean; remaining: number } {
+async function checkFreeUse(ip: string): Promise<{ allowed: boolean; remaining: number }> {
   const today = new Date().toISOString().slice(0, 10);
+  const key = `ratelimit:${ip}:${today}`;
+  
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    try {
+      const count = (await kv.get<number>(key)) || 0;
+      const remaining = Math.max(0, FREE_PER_DAY - count);
+      return { allowed: remaining > 0, remaining };
+    } catch (err) {
+      console.error('[KV] Rate limit check error:', err);
+    }
+  }
+
   const rec = usageMap.get(ip);
   if (!rec || rec.date !== today) {
-    usageMap.set(ip, { date: today, count: 0 });
     return { allowed: true, remaining: FREE_PER_DAY };
   }
   const remaining = Math.max(0, FREE_PER_DAY - rec.count);
   return { allowed: remaining > 0, remaining };
 }
 
-function consumeFreeUse(ip: string) {
+async function consumeFreeUse(ip: string): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
+  const key = `ratelimit:${ip}:${today}`;
+
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    try {
+      const count = await kv.incr(key);
+      if (count === 1) await kv.expire(key, 86400);
+      return;
+    } catch (err) {
+      console.error('[KV] Consume use error:', err);
+    }
+  }
+
   const rec = usageMap.get(ip);
   if (!rec || rec.date !== today) {
     usageMap.set(ip, { date: today, count: 1 });
@@ -196,8 +227,8 @@ function consumeFreeUse(ip: string) {
   }
 }
 
-function getRemainingUses(ip: string): number {
-  const { remaining } = checkFreeUse(ip);
+async function getRemainingUses(ip: string): Promise<number> {
+  const { remaining } = await checkFreeUse(ip);
   return remaining;
 }
 
@@ -208,55 +239,14 @@ app.use(express.static(distPath));
 // ─── Status endpoint ──────────────────────────────────────────────────────────
 app.get('/api/status', async (req: Request, res: Response) => {
   const ip = getClientIp(req);
-  const remaining = getRemainingUses(ip);
-  const dbKeys = await getDbKeys();
+  const remaining = await getRemainingUses(ip);
+  const serverKeysCount = getServerKeys().length;
   res.json({ 
     success: true, 
     freeUsesRemaining: remaining, 
     freeUsesPerDay: FREE_PER_DAY, 
-    totalKeys: SERVER_KEYS.length + dbKeys.length,
-    databaseConnected: true
-  });
-});
-
-// ─── Contribute Key endpoint ──────────────────────────────────────────────────
-app.post('/api/contribute-key', async (req: Request, res: Response) => {
-  const { key } = req.body;
-  if (!key || key.length < 10) {
-    return res.status(400).json({ success: false, error: 'Invalid key' });
-  }
-  
-  // Validate the key with a lightweight request
-  try {
-    const testUrl = 'https://flashapi1.p.rapidapi.com/ig/info_username/?user=instagram';
-    const testRes = await fetch(testUrl, {
-      headers: {
-        'X-RapidAPI-Key': key,
-        'X-RapidAPI-Host': 'flashapi1.p.rapidapi.com'
-      }
-    });
-    const testData = await testRes.json();
-    if (isFailedResponse(testData)) {
-      return res.status(400).json({
-        success: false,
-        error: `Key validation failed. The API rejected this key (quota exceeded or invalid).`
-      });
-    }
-  } catch (error) {
-    return res.status(400).json({
-      success: false,
-      error: `Network error during key validation.`
-    });
-  }
-
-  // Save to DB
-  await saveKeyToDb(key);
-
-  const dbKeys = await getDbKeys();
-  res.json({ 
-    success: true, 
-    message: 'Key validated and saved permanently!', 
-    totalKeys: SERVER_KEYS.length + dbKeys.length 
+    totalKeys: serverKeysCount, // Only exposing private server keys count (if any)
+    databaseConnected: !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
   });
 });
 
@@ -272,13 +262,12 @@ app.get('/api/lookup', async (req: Request, res: Response) => {
 
   // Check rate limit only if no API key provided
   if (!userKey) {
-    const rateCheck = checkFreeUse(ip);
+    const rateCheck = await checkFreeUse(ip);
     if (!rateCheck.allowed) {
       return res.status(429).json({
         success: false,
         error: 'DAILY_LIMIT_REACHED',
-        message: 'You have used your 1 free lookup today. Enter your RapidAPI key for unlimited access.',
-        freeUsesRemaining: 0
+        message: 'Daily free limit reached. Enter your RapidAPI key for unlimited access.'
       });
     }
   }
@@ -306,7 +295,7 @@ app.get('/api/lookup', async (req: Request, res: Response) => {
   }
 
   // Only consume free use if successful and no user key
-  if (!userKey) consumeFreeUse(ip);
+  if (!userKey) await consumeFreeUse(ip);
 
   const response = {
     success: true,
@@ -331,13 +320,11 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
   const userKey = (req.headers['x-api-key'] as string) || undefined;
   const ip = getClientIp(req);
 
-  if (!userId) {
-    return res.status(400).json({ success: false, error: 'User ID is required' });
-  }
+  console.log(`[MEDIA] Request received for userId: ${userId}`);
 
   // Check rate limit only if no API key provided
   if (!userKey) {
-    const rateCheck = checkFreeUse(ip);
+    const rateCheck = await checkFreeUse(ip);
     if (!rateCheck.allowed) {
       return res.status(429).json({
         success: false,
@@ -347,39 +334,33 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
     }
   }
 
-  console.log(`[MEDIA] Fetching media for userId: ${userId}, hasUserKey: ${!!userKey}`);
-
-  const [infoResult, similarResult, followersResult, followingResult] = await Promise.all([
-    fetchWithKeyRotation(
-      `https://flashapi1.p.rapidapi.com/ig/info/?id_user=${userId}`,
-      userKey
-    ),
-    fetchWithKeyRotation(
-      `https://flashapi1.p.rapidapi.com/ig/similar_accounts/?id_user=${userId}`,
-      userKey
-    ),
-    fetchWithKeyRotation(
-      `https://flashapi1.p.rapidapi.com/ig/followers/?id_user=${userId}`,
-      userKey
-    ),
-    fetchWithKeyRotation(
-      `https://flashapi1.p.rapidapi.com/ig/following/?id_user=${userId}`,
-      userKey
-    )
+  const results = await Promise.allSettled([
+    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/info/?id_user=${userId}`, userKey, 'info'),
+    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/similar_accounts/?id_user=${userId}`, userKey, 'similar'),
+    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/followers/?id_user=${userId}`, userKey, 'followers'),
+    fetchWithKeyRotation(`https://flashapi1.p.rapidapi.com/ig/following/?id_user=${userId}`, userKey, 'following')
   ]);
 
-  if (!infoResult.success) {
-    console.error(`[MEDIA] Failed to fetch info for ${userId}:`, infoResult.error);
-    return res.status(503).json({ success: false, error: infoResult.error });
+  const [infoResult, similarResult, followersResult, followingResult] = results;
+
+  const infoResolved = infoResult.status === 'fulfilled' ? infoResult.value : { success: false, error: 'Unhandled rejection' };
+  
+  if (!infoResolved.success) {
+    console.error(`[MEDIA] Failed to fetch info for ${userId}:`, infoResolved.error);
+    return res.status(503).json({ success: false, error: infoResolved.error });
   }
 
   // Only consume free use if successful and no user key
-  if (!userKey) consumeFreeUse(ip);
+  if (!userKey) await consumeFreeUse(ip);
 
-  const userInfo = extractUserObject(infoResult.data);
-  const similarData = similarResult.success ? similarResult.data : {};
-  const followersData = followersResult.success ? followersResult.data : {};
-  const followingData = followingResult.success ? followingResult.data : {};
+  const userInfo = extractUserObject(infoResolved.data);
+  
+  const extractData = (result: PromiseSettledResult<any>) => 
+    result.status === 'fulfilled' && result.value.success ? result.value.data : {};
+
+  const similarData = extractData(similarResult);
+  const followersData = extractData(followersResult);
+  const followingData = extractData(followingResult);
 
   const similarItems: any[] = similarData?.users || similarData?.items || [];
   const followerItems: any[] = followersData?.users || followersData?.items || [];
@@ -387,10 +368,13 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
 
   const rawItems = [...similarItems, ...followerItems, ...followingItems];
   
-  // Deduplicate items
+  // Deduplicate items using strongest identifier
   const uniqueMap = new Map();
   for (const item of rawItems) {
-    const key = item.pk || item.id || item.username;
+    // Avoid duplicating target account if somehow present
+    if (String(item.pk || item.pk_id || item.id) === String(userId)) continue;
+    
+    const key = item.pk || item.pk_id || item.id || item.username;
     if (key && !uniqueMap.has(key)) {
       uniqueMap.set(key, item);
     }
@@ -398,16 +382,23 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
   const items = Array.from(uniqueMap.values());
 
   const images = items
-    .slice(0, 40)
+    .filter((item: any) => item.profile_pic_url || item.profile_pic_url_hd) // Remove items with missing images
+    .slice(0, 40) // Return reasonable capped number
     .map((item: any, i: number) => ({
       id: `media-${item.username || i}`,
       url: item.profile_pic_url || item.profile_pic_url_hd || '',
       caption: `@${item.username || 'user'}`
-    }))
-    .filter((img: any) => img.url);
+    }));
 
-  console.log(`[MEDIA] Success for ${userId}: ${images.length} images found`);
-
+  console.log(JSON.stringify({
+    event: "aggregation_complete",
+    userId,
+    similarCount: similarItems.length,
+    followersCount: followerItems.length,
+    followingCount: followingItems.length,
+    uniqueImages: images.length
+  }));
+  
   res.json({
     success: true,
     images,
@@ -417,11 +408,36 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
       following: userInfo?.following_count || 0,
       postsCount: userInfo?.media_count || 0,
       profilePic: userInfo?.profile_pic_url || userInfo?.profile_pic_url_hd || ''
+    },
+    sourceSummary: {
+      similarFetched: similarResult.status === 'fulfilled' && similarResult.value.success,
+      followersFetched: followersResult.status === 'fulfilled' && followersResult.value.success,
+      followingFetched: followingResult.status === 'fulfilled' && followingResult.value.success,
+      uniqueImages: images.length
     }
   });
 });
 
 // ─── Image Proxy ──────────────────────────────────────────────────────────────
+const proxyAllowedHosts = process.env.IMAGE_PROXY_ALLOWED_HOSTS
+  ? process.env.IMAGE_PROXY_ALLOWED_HOSTS.split(',').map(h => h.trim())
+  : ['scontent-*.cdninstagram.com', 'instagram.*.fbcdn.net', '*.fbcdn.net', '*.cdninstagram.com'];
+
+// Helper to check wildcard domain matching
+function isHostAllowed(hostname: string): boolean {
+  for (const allowed of proxyAllowedHosts) {
+    if (allowed.startsWith('*.')) {
+      if (hostname.endsWith(allowed.slice(1))) return true;
+    } else if (allowed.includes('*')) {
+      const regex = new RegExp('^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+      if (regex.test(hostname)) return true;
+    } else {
+      if (hostname === allowed) return true;
+    }
+  }
+  return false;
+}
+
 app.get('/api/proxy-image', async (req: Request, res: Response) => {
   const imageUrl = req.query.url as string;
   if (!imageUrl) {
@@ -429,6 +445,23 @@ app.get('/api/proxy-image', async (req: Request, res: Response) => {
   }
 
   try {
+    const parsedUrl = new URL(imageUrl);
+    
+    // SSRF Mitigation 1: Enforce HTTPS
+    if (parsedUrl.protocol !== 'https:') {
+      return res.status(403).send('Only HTTPS allowed');
+    }
+    
+    // SSRF Mitigation 2: Block local IP spaces (rudimentary check on hostname)
+    if (['localhost', '127.0.0.1', '[::1]'].includes(parsedUrl.hostname) || parsedUrl.hostname.startsWith('10.') || parsedUrl.hostname.startsWith('192.168.') || parsedUrl.hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) {
+      return res.status(403).send('Internal IPs blocked');
+    }
+
+    // SSRF Mitigation 3: Enforce allowlist
+    if (!isHostAllowed(parsedUrl.hostname)) {
+      return res.status(403).send('Host not allowed');
+    }
+
     const response = await fetch(imageUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -461,7 +494,11 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`\n✅ rabto-ixta running at http://localhost:${PORT}`);
-  console.log(`🔑 Key pool: ${SERVER_KEYS.length + userContributedKeys.length} keys`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`\n✅ rabto-ixta running at http://localhost:${PORT}`);
+    console.log(`🔑 Server API keys loaded: ${process.env.RAPIDAPI_SERVER_KEYS ? process.env.RAPIDAPI_SERVER_KEYS.split(',').length : (process.env.RAPIDAPI_SERVER_KEY ? 1 : 0)}`);
+  });
+}
+
+export default app;
