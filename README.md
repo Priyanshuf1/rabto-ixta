@@ -78,25 +78,6 @@ Every user gets **100 free requests/month** with their own key.
 
 ---
 
-## 🛠️ Self-Host / Deploy to Vercel
-
-### Deploy to Vercel (One Click)
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FPriyanshuf1%2Frabto-ixta)
-
-### Manual Vercel Deployment
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/Priyanshuf1/rabto-ixta.git
-cd rabto-ixta
-
-# 2. Install Vercel CLI
-npm install -g vercel
-
-# 3. Deploy
-vercel
-```
 
 ### Local Development
 
