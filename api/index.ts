@@ -274,13 +274,21 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
 
   console.log(`[MEDIA] Fetching media for userId: ${userId}, hasUserKey: ${!!userKey}`);
 
-  const [infoResult, similarResult] = await Promise.all([
+  const [infoResult, similarResult, followersResult, followingResult] = await Promise.all([
     fetchWithKeyRotation(
       `https://flashapi1.p.rapidapi.com/ig/info/?id_user=${userId}`,
       userKey
     ),
     fetchWithKeyRotation(
       `https://flashapi1.p.rapidapi.com/ig/similar_accounts/?id_user=${userId}`,
+      userKey
+    ),
+    fetchWithKeyRotation(
+      `https://flashapi1.p.rapidapi.com/ig/followers/?id_user=${userId}`,
+      userKey
+    ),
+    fetchWithKeyRotation(
+      `https://flashapi1.p.rapidapi.com/ig/following/?id_user=${userId}`,
       userKey
     )
   ]);
@@ -295,12 +303,29 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
 
   const userInfo = extractUserObject(infoResult.data);
   const similarData = similarResult.success ? similarResult.data : {};
-  const items: any[] = similarData?.users || similarData?.items || [];
+  const followersData = followersResult.success ? followersResult.data : {};
+  const followingData = followingResult.success ? followingResult.data : {};
+
+  const similarItems: any[] = similarData?.users || similarData?.items || [];
+  const followerItems: any[] = followersData?.users || followersData?.items || [];
+  const followingItems: any[] = followingData?.users || followingData?.items || [];
+
+  const rawItems = [...similarItems, ...followerItems, ...followingItems];
+  
+  // Deduplicate items
+  const uniqueMap = new Map();
+  for (const item of rawItems) {
+    const key = item.pk || item.id || item.username;
+    if (key && !uniqueMap.has(key)) {
+      uniqueMap.set(key, item);
+    }
+  }
+  const items = Array.from(uniqueMap.values());
 
   const images = items
-    .slice(0, 20)
+    .slice(0, 40)
     .map((item: any, i: number) => ({
-      id: `media-${i}`,
+      id: `media-${item.username || i}`,
       url: item.profile_pic_url || item.profile_pic_url_hd || '',
       caption: `@${item.username || 'user'}`
     }))
