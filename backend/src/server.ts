@@ -1,6 +1,7 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 
 dotenv.config();
 
@@ -9,6 +10,9 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Serve static frontend files from the dist directory in production
+app.use(express.static(path.join(__dirname, '../../frontend/dist')));
 
 // Base route to check if server is running
 app.get('/', (req, res) => {
@@ -124,8 +128,13 @@ app.get('/api/media/:userId', async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch followers' });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
+});
+
+// Catch-all route to serve the React app for any other requests (SPA routing)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../frontend/dist/index.html'));
 });
 
 app.listen(PORT, () => {
