@@ -6,12 +6,26 @@
   "bin": {
     "rabto-ixta": "./cli.js"
   },
+  "files": [
+    "cli.js",
+    "backend/src/",
+    "backend/package.json",
+    "backend/package-lock.json",
+    "backend/tsconfig.json",
+    "frontend/dist/",
+    "api/",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "npm install --prefix frontend && npm run build --prefix frontend",
-    "start": "npm start --prefix backend",
-    "dev:backend": "npm run dev --prefix backend",
-    "dev:frontend": "npm run dev --prefix frontend",
-    "install-all": "npm install --prefix frontend && npm install --prefix backend"
+    "setup": "node -e \"console.log('Checking Node.js...'); if (parseInt(process.version.slice(1)) < 22) { console.error('Node.js 22 is required.'); process.exit(1); }\" && npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend && node -e \"console.log('\\nSetup complete.\\nRun:\\nnpm start')\"",
+    "build": "node -e \"console.log('Building frontend...')\" && npm run build --prefix frontend && node -e \"const fs=require('fs'); if(!fs.existsSync('frontend/dist/index.html')){console.error('Build failed.'); process.exit(1);}\"",
+    "start": "node ./cli.js",
+    "dev": "node -e \"console.log('Starting development servers. (Frontend + Backend concurrent)...')\" && npm run dev --prefix backend & npm run dev --prefix frontend",
+    "test": "npm test --prefix backend",
+    "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",
+    "verify": "npm run typecheck && npm run test && npm run build && node ./scripts/smoke-test.js"
   },
   "keywords": [
     "instagram",
@@ -32,7 +46,7 @@
     "url": "https://github.com/Priyanshuf1/rabto-ixta/issues"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "@vercel/kv": "^3.0.0",
@@ -44,7 +58,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "@types/node": "^20.10.6",
+    "@types/node": "^22.0.0",
     "typescript": "^5.3.3"
   }
 }

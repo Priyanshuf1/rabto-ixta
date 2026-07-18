@@ -2,39 +2,71 @@ name: CI
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ master, main, fix/* ]
   pull_request:
     branches: [ master, main ]
 
 jobs:
   build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run Setup (Install & Build)
+        run: npm run setup
+
+      - name: Typecheck Backend
+        run: cd backend && npm run typecheck
+        
+      - name: Typecheck Frontend
+        run: cd frontend && npm run typecheck
+      
+      - name: Run Backend Tests
+        run: npm test
+
+      - name: Verify CLI Help Output
+        run: node cli.js --help
+
+      - name: Verify CLI Version Output
+        run: node cli.js --version
+
+      - name: Run Integration Smoke Test
+        run: node scripts/smoke-test.js
+
+  packaging-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
+          
+      - name: Run Setup (Install & Build)
+        run: npm run setup
 
-      - name: Install root dependencies
-        run: npm install
-      
-      - name: Install backend dependencies
-        run: cd backend && npm install
-      
-      - name: Install frontend dependencies
-        run: cd frontend && npm install
+      - name: Dry Run npm pack
+        run: npm pack --dry-run
         
-      - name: Typecheck backend
-        run: cd backend && npx tsc --noEmit
-        
-      - name: Typecheck frontend
-        run: cd frontend && npx tsc --noEmit
-      
-      - name: Run Backend Tests
-        run: cd backend && npm test
-        
-      - name: Run Frontend Build
-        run: cd frontend && npm run build
+      - name: Create Tarball
+        run: npm pack
+
+      - name: Test clean tarball installation
+        run: |
+          mkdir /tmp/rabto-test
+          mv *.tgz /tmp/rabto-test/
+          cd /tmp/rabto-test
+          npm install *.tgz
+          # Make sure it runs without installing extra global packages
+          npx rabto-ixta --help

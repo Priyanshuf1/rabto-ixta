@@ -1,159 +1,92 @@
-<div align="center">
+# Rabto Ixta
 
-```
-██████╗  █████╗ ██████╗ ████████╗ ██████╗      ██╗██╗  ██╗████████╗ █████╗ 
-██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██╔═══██╗     ██║╚██╗██╔╝╚══██╔══╝██╔══██╗
-██████╔╝███████║██████╔╝   ██║   ██║   ██║     ██║ ╚███╔╝    ██║   ███████║
-██╔══██╗██╔══██║██╔══██╗   ██║   ██║   ██║     ██║ ██╔██╗    ██║   ██╔══██║
-██║  ██║██║  ██║██████╔╝   ██║   ╚██████╔╝     ██║██╔╝ ██╗   ██║   ██║  ██║
-╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝    ╚═╝    ╚═════╝      ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
-```
+Instagram data extraction tool — lookup user IDs, view full-size profile pictures, and explore similar accounts.
 
-**Instagram Data Extraction Tool**
+## Quick Start
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
-[![NPM Version](https://img.shields.io/npm/v/rabto-ixta.svg)](https://www.npmjs.com/package/rabto-ixta)
-[![GitHub Stars](https://img.shields.io/github/stars/Priyanshuf1/rabto-ixta?style=social)](https://github.com/Priyanshuf1/rabto-ixta)
+### Run from GitHub
 
-*Look up Instagram User IDs and explore similar account images — all from a sleek hacker-themed terminal UI.*
+Requirements:
+- Node.js 22 LTS
+- npm
+- Internet connection
+- A RapidAPI key may be required depending on configured mode
 
-[🚀 Live Demo](https://rabto-ixta.vercel.app) · [📦 NPM Package](https://www.npmjs.com/package/rabto-ixta) · [🐛 Report Bug](https://github.com/Priyanshuf1/rabto-ixta/issues)
-
-</div>
-
----
-
-## ✨ Features
-
-- 🔍 **Username → User ID Lookup** — Instantly resolve any Instagram username to its numeric ID
-- 🖼️ **Similar Account Explorer** — Browse beautiful profile images from algorithmically similar accounts
-- 🔑 **Bring Your Own Key (BYOK)** — Uses your personal free RapidAPI key — you pay nothing
-- 🖥️ **Hacker Terminal UI** — Matrix-style dark interface with animated effects
-- ⚡ **One Command Launch** — Run it locally with a single `npx` command
-- 🌍 **Cloud Deployed** — Also available live on Vercel
-
----
-
-## 🚀 Run It Locally in 30 Seconds
-
-You don't need to clone anything. Just run this single command in your terminal:
-
+Commands:
 ```bash
-npx rabto-ixta
-```
-
-Your browser will automatically open to `http://localhost:3002` with the full app running.
-
-> **Requirements:** Node.js v18 or higher. [Download Node.js here](https://nodejs.org/)
-
-### Install Globally (run anytime)
-
-```bash
-npm install -g rabto-ixta
-rabto-ixta
-```
-
----
-
-## 🌐 Live on the Web
-
-Access the tool without installing anything:
-
-👉 **[https://rabto-ixta.vercel.app](https://rabto-ixta.vercel.app)**
-
----
-
-## 🔑 Getting Your Free API Key
-
-This tool uses the **FlashAPI1** Instagram API via RapidAPI (100% free on the Basic plan).
-
-1. Visit [FlashAPI1 on RapidAPI](https://rapidapi.com/for-sharm/api/flashapi1)
-2. Click **"Sign Up"** (free account — no credit card needed)
-3. Click **"Subscribe"** on the **Basic** plan (Free, $0/month)
-4. Go to the **"Authorization"** tab and copy your `X-RapidAPI-Key`
-5. Paste it into the app when prompted
-
-Every user gets **100 free requests/month** with their own key.
-
----
-
-
-### Local Development
-
-```bash
-# 1. Clone the repo
 git clone https://github.com/Priyanshuf1/rabto-ixta.git
 cd rabto-ixta
-
-# 2. Install all dependencies
-npm run install-all
-
-# 3. Start backend (Terminal 1)
-npm run dev:backend
-
-# 4. Start frontend (Terminal 2)
-npm run dev:frontend
-
-# 5. Open http://localhost:5173
+npm install
+npm run build
+npm start
 ```
 
----
+Rabto Ixta starts a local server and automatically opens the browser.
 
-## 📁 Project Structure
+Default URL:
+http://localhost:3002
 
-```
-rabto-ixta/
-├── api/
-│   └── index.ts          # Vercel serverless function (Express app)
-├── backend/
-│   └── src/
-│       └── server.ts     # Express backend (local dev & CLI)
-├── frontend/
-│   └── src/
-│       ├── App.tsx        # Main React app with BYOK system
-│       └── components/
-│           ├── InstagramLookup.tsx   # Username → ID resolver
-│           └── PhotoCarousel.tsx     # Similar accounts image carousel
-├── cli.js                # CLI entry point (npx rabto-ixta)
-├── vercel.json           # Vercel deployment config
-└── package.json          # Root package with npm bin entry
+When the port is occupied, another available port is selected automatically.
+
+### Download ZIP
+
+1. Click **Code**.
+2. Click **Download ZIP**.
+3. Extract the ZIP.
+4. Open a terminal inside the folder.
+5. Run:
+```bash
+npm install
+npm run build
+npm start
 ```
 
----
+### CLI Options
 
-## 🏗️ Tech Stack
+**Do not automatically open browser**
+```bash
+npm start -- --no-open
+```
+or 
+```bash
+rabto-ixta --no-open
+```
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React, TypeScript, Vite, TailwindCSS |
-| Backend | Node.js, Express, TypeScript |
-| API | [FlashAPI1 via RapidAPI](https://rapidapi.com/for-sharm/api/flashapi1) |
-| Deployment | Vercel (serverless) |
-| CLI | Node.js ESM with auto browser-open |
+**Use another port**
+```bash
+npm start -- --port 4000
+```
 
----
+### Development
+To run frontend and backend concurrently in dev mode:
+```bash
+npm run dev
+```
 
-## ⚠️ Disclaimer
+## Environment Configuration
 
-This tool is built for educational and research purposes. It uses publicly available Instagram data through the RapidAPI platform. Always respect Instagram's Terms of Service and individual users' privacy.
+To configure environment variables (like BYOK API keys), copy the template file:
 
----
+```bash
+cp .env.example .env
+```
 
-## 👨‍💻 Author
+Open `.env` and fill in the values. **Users must never commit their .env file.**
 
-**Priyanshu Awasthi**
+## Important Explanation
 
-- GitHub: [@Priyanshuf1](https://github.com/Priyanshuf1)
+GitHub hosts the project files. The localhost application opens only after the project is downloaded, installed and started on the user's computer.
 
----
+## Troubleshooting
 
-## 📄 License
-
-MIT License — feel free to use, modify, and distribute.
-
----
-
-<div align="center">
-  <sub>Built with ❤️ by Priyanshu Awasthi</sub>
-</div>
+- **Node.js version problem**: Ensure you are running Node.js 22+.
+- **npm install failure**: Try deleting `node_modules` and re-running `npm install`.
+- **Frontend build missing**: The `npm start` launcher will tell you if the frontend build is missing. Run `npm run setup` or `npm run build`.
+- **Port already occupied**: The launcher will automatically select another free port. You can also explicitly specify one using `--port`.
+- **Browser did not open**: Run with `--no-open` or open `http://localhost:3002` manually in your browser.
+- **API key missing**: Make sure you have configured your RapidAPI key in the UI or backend if using BYOK.
+- **API quota exhausted**: Ensure your RapidAPI plan has enough requests. Wait for the quota to reset.
+- **Backend did not start**: Check the terminal for error logs.
+- **Windows PowerShell path issue**: Ensure Node and npm are in your PATH.
+- **Permission errors**: Run the terminal as administrator (Windows) or use `sudo` carefully on Linux/macOS.
+- **How to stop the application**: Press `Ctrl+C` in the terminal where it is running.

@@ -43,7 +43,7 @@ describe('Media Endpoint Aggregation', () => {
     });
 
     const response = await request(app)
-      .get('/api/media/test_id')
+      .get('/api/media/123456789')
       .set('x-api-key', 'mocked_key_123'); // bypass rate limits
 
     expect(response.status).toBe(200);
