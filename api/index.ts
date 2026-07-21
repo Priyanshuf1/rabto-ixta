@@ -262,11 +262,32 @@ app.get('/api/lookup', async (req: Request, res: Response) => {
   }
 
   const targetUser = username.trim().replace(/^@/, '').toLowerCase();
-  const url = `https://flashapi1.p.rapidapi.com/ig/info_username/?user=${encodeURIComponent(targetUser)}`;
   
   console.log(`[LOOKUP] Looking up username: ${targetUser}, hasUserKey: ${!!userKey}`);
+
+  // Step 1: Get numeric user ID from username using the /ig/user_id/ endpoint
+  // (more broadly supported across subscription tiers than /ig/info_username/)
+  const userIdUrl = `https://flashapi1.p.rapidapi.com/ig/user_id/?user=${encodeURIComponent(targetUser)}`;
+  const userIdResult = await fetchWithKeyRotation(userIdUrl, userKey, 'user_id');
+
+  let resolvedUserId: string | null = null;
+
+  if (userIdResult.success && (userIdResult.data?.id || userIdResult.data?.pk || userIdResult.data?.user_id)) {
+    resolvedUserId = String(userIdResult.data.id || userIdResult.data.pk || userIdResult.data.user_id);
+  }
+
+  // Step 2: Fetch full profile using ID if we got one, otherwise try info_username as fallback
+  let result: { success: boolean; data?: any; error?: string };
+
+  if (resolvedUserId) {
+    const infoUrl = `https://flashapi1.p.rapidapi.com/ig/info/?id_user=${resolvedUserId}`;
+    result = await fetchWithKeyRotation(infoUrl, userKey, 'info_by_id');
+  } else {
+    // Fallback to direct username endpoint
+    const url = `https://flashapi1.p.rapidapi.com/ig/info_username/?user=${encodeURIComponent(targetUser)}`;
+    result = await fetchWithKeyRotation(url, userKey, 'info_username');
+  }
   
-  const result = await fetchWithKeyRotation(url, userKey);
 
   if (!result.success) {
     console.error(`[LOOKUP] Failed for ${targetUser}:`, result.error);
@@ -287,7 +308,7 @@ app.get('/api/lookup', async (req: Request, res: Response) => {
 
   const response = {
     success: true,
-    userId: getUserId(user),
+    userId: getUserId(user) || resolvedUserId || '',
     followers: user.follower_count,
     following: user.following_count,
     postsCount: user.media_count,
