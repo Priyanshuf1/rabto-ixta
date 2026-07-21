@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect } from 'react';
+import { motion, useAnimation } from 'motion/react';
 import { Play, Pause, ArrowLeftRight, FastForward, Plus, Trash2, Eye, ExternalLink } from 'lucide-react';
 import { CarouselImage } from '../types';
 
@@ -21,20 +21,54 @@ export default function PhotoCarousel({
   onRemoveImage,
   targetUsername,
 }: PhotoCarouselProps) {
-  const [speed, setSpeed] = useState<number>(20); // seconds per loop
+  const [speed, setSpeed] = useState<number>(40); // seconds per loop
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [direction, setDirection] = useState<'left' | 'right'>('left');
   const [newUrl, setNewUrl] = useState<string>('');
   const [newCaption, setNewCaption] = useState<string>('');
   const [selectedImage, setSelectedImage] = useState<CarouselImage | null>(null);
 
+  const controls = useAnimation();
+
+  // Start or restart the animation whenever direction, speed, or images change
+  useEffect(() => {
+    if (images.length === 0) return;
+    controls.start({
+      x: direction === 'left' ? [0, '-33.33%'] : ['-33.33%', 0],
+      transition: {
+        ease: 'linear',
+        duration: speed,
+        repeat: Infinity,
+        repeatType: 'loop',
+      },
+    });
+  }, [direction, speed, images.length]);
+
+  // Handle pause / resume without restarting the animation
+  useEffect(() => {
+    if (isPaused) {
+      controls.stop();
+    } else {
+      controls.start({
+        x: direction === 'left' ? [0, '-33.33%'] : ['-33.33%', 0],
+        transition: {
+          ease: 'linear',
+          duration: speed,
+          repeat: Infinity,
+          repeatType: 'loop',
+        },
+      });
+    }
+  }, [isPaused]);
+
   // Quick preset speeds
   const speedPresets = [
-    { label: 'SLOW', val: 35 },
-    { label: 'MEDIUM', val: 20 },
-    { label: 'FAST', val: 10 },
-    { label: 'OVERDRIVE', val: 5 },
+    { label: 'SLOW', val: 60 },
+    { label: 'MEDIUM', val: 40 },
+    { label: 'FAST', val: 20 },
+    { label: 'OVERDRIVE', val: 10 },
   ];
+
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,21 +156,11 @@ export default function PhotoCarousel({
           <div className="relative w-full flex">
             <motion.div
               className="flex gap-4 px-2 select-none"
-              animate={{
-                x: direction === 'left' ? [0, -33.33 + '%'] : [-33.33 + '%', 0]
-              }}
-              transition={{
-                ease: 'linear',
-                duration: speed,
-                repeat: Infinity,
-                repeatType: 'loop',
-              }}
-              // Simple check to pause framer motion
+              animate={controls}
               style={{
                 display: 'flex',
                 pointerEvents: 'auto',
               }}
-              key={`${direction}-${speed}-${isPaused}`} // re-mount on control changes for seamless updates
             >
               {/* If paused, we can stop animating, but Framer Motion handles it neatly on standard animate triggers */}
               {duplicatedImages.map((img, idx) => (
